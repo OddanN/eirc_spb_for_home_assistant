@@ -6,6 +6,10 @@
 ![License](https://img.shields.io/github/license/OddanN/eirc_spb_for_home_assistant?style=flat-square)
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg?style=flat-square)](https://github.com/hacs/integration)
 
+<p align="center">
+  <img src="logo.png" alt="EIRC SPB logo" width="200">
+</p>
+
 The EIRC SPB Integration allows you to connect your Home Assistant instance to the Saint Petersburg Unified Information
 and Settlement Center (EIRC SPB), providing access to personal account details from the customer portal. This
 integration supports authentication by email or phone number, including additional confirmation methods when required,
