@@ -1,0 +1,104 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Добавление аккаунта ЕИРЦ СПб",
+        "menu_options": {
+          "email": "Войти по email",
+          "phone": "Войти по телефону"
+        }
+      },
+      "confirmation_method": {
+        "title": "Выбор способа подтверждения",
+        "menu_options": {
+          "email_confirmation": "Получить код по email",
+          "phone_confirmation": "Получить код по телефону",
+          "flashcall_confirmation": "Получить код через звонок"
+        }
+      },
+      "email": {
+        "title": "Вход по email",
+        "description": "Введите учетные данные личного кабинета ЕИРЦ СПб.",
+        "data": {
+          "login": "Email",
+          "password": "Пароль"
+        }
+      },
+      "phone": {
+        "title": "Вход по телефону",
+        "description": "Введите номер телефона в формате +79991234567.",
+        "data": {
+          "login": "Номер телефона",
+          "password": "Пароль"
+        }
+      },
+      "confirmation_code": {
+        "title": "Ввод кода подтверждения",
+        "description": "Введи код полученный выбранным способом. Ожидаемая длина: {code_length}. {flashcall_hint}",
+        "data": {
+          "code": "Код"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Повторная авторизация ЕИРЦ СПб",
+        "description": "Сессия для {login} истекла. Введите текущий пароль или продолжите подтверждение по коду, если оно будет запрошено.",
+        "data": {
+          "password": "Пароль"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Не удалось подключиться к API ЕИРЦ СПб.",
+      "invalid_confirmation_code": "Неверный код подтверждения.",
+      "invalid_code_length": "Неверная длина кода.",
+      "invalid_auth": "Неверный логин или пароль.",
+      "invalid_phone": "Телефон должен быть в формате +79991234567.",
+      "unknown": "Непредвиденная ошибка."
+    },
+    "abort": {
+      "already_configured": "Этот аккаунт уже настроен.",
+      "cannot_connect": "Не удалось подключиться к API ЕИРЦ СПб.",
+      "confirmation_send_failed": "Не удалось отправить код подтверждения.",
+      "reauth_successful": "Повторная авторизация выполнена.",
+      "unknown": "Непредвиденная ошибка."
+    }
+  },
+  "options": {
+    "step": {
+      "reauth_confirmation_method": {
+        "title": "Выбор способа подтверждения",
+        "menu_options": {
+          "email_confirmation": "Получить код по email",
+          "phone_confirmation": "Получить код по телефону",
+          "flashcall_confirmation": "Получить код через звонок"
+        }
+      },
+      "confirmation_code": {
+        "title": "Ввод кода подтверждения",
+        "description": "Введи код полученный выбранным способом. Ожидаемая длина: {code_length}. {flashcall_hint}",
+        "data": {
+          "code": "Код"
+        }
+      },
+      "init": {
+        "title": "Настройки интеграции",
+        "description": "Задайте период обновления данных и выберите счета.",
+        "data": {
+          "scan_interval": "Период обновления",
+          "account_ids": "Счета"
+        }
+      }
+    },
+    "abort": {
+      "cannot_connect": "Не удалось подключиться к API ЕИРЦ СПб.",
+      "invalid_auth": "Ошибка авторизации. Перенастройте интеграцию.",
+      "unknown": "Непредвиденная ошибка."
+    },
+    "error": {
+      "cannot_connect": "Не удалось подключиться к API ЕИРЦ СПб.",
+      "invalid_confirmation_code": "Неверный код подтверждения.",
+      "invalid_code_length": "Неверная длина кода.",
+      "unknown": "Непредвиденная ошибка."
+    }
+  }
+}

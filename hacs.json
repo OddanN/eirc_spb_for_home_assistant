@@ -1,0 +1,13 @@
+{
+  "name": "EIRC SPB for Home Assistant",
+  "country": "RU",
+  "homeassistant": "2024.12.0",
+  "render_readme": true,
+  "domains": [
+    "eirc_spb_for_home_assistant"
+  ],
+  "documentation": "https://github.com/OddanN/eirc_spb_for_home_assistant",
+  "authors": [
+    "OddanN"
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add EIRC SPB account",
+        "menu_options": {
+          "email": "Sign in with email",
+          "phone": "Sign in with phone"
+        }
+      },
+      "confirmation_method": {
+        "title": "Choose confirmation method",
+        "menu_options": {
+          "email_confirmation": "Get code by email",
+          "phone_confirmation": "Get code by phone",
+          "flashcall_confirmation": "Get code by flash call"
+        }
+      },
+      "email": {
+        "title": "Sign in with email",
+        "description": "Enter your EIRC SPB account credentials.",
+        "data": {
+          "login": "Email",
+          "password": "Password"
+        }
+      },
+      "phone": {
+        "title": "Sign in with phone",
+        "description": "Enter your phone number in +79991234567 format.",
+        "data": {
+          "login": "Phone number",
+          "password": "Password"
+        }
+      },
+      "confirmation_code": {
+        "title": "Enter confirmation code",
+        "description": "Enter the code received by the selected method. Expected length: {code_length}. {flashcall_hint}",
+        "data": {
+          "code": "Code"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate EIRC SPB",
+        "description": "Authentication expired for {login}. Enter the current password or continue with code confirmation if prompted.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the EIRC SPB API.",
+      "invalid_confirmation_code": "Invalid confirmation code.",
+      "invalid_code_length": "Invalid code length.",
+      "invalid_auth": "Invalid login or password.",
+      "invalid_phone": "Phone must be in +79991234567 format.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This account is already configured.",
+      "cannot_connect": "Failed to connect to the EIRC SPB API.",
+      "confirmation_send_failed": "Failed to send the confirmation code.",
+      "reauth_successful": "Reauthentication successful.",
+      "unknown": "Unexpected error."
+    }
+  },
+  "options": {
+    "step": {
+      "reauth_confirmation_method": {
+        "title": "Choose confirmation method",
+        "menu_options": {
+          "email_confirmation": "Get code by email",
+          "phone_confirmation": "Get code by phone",
+          "flashcall_confirmation": "Get code by flash call"
+        }
+      },
+      "confirmation_code": {
+        "title": "Enter confirmation code",
+        "description": "Enter the code received by the selected method. Expected length: {code_length}. {flashcall_hint}",
+        "data": {
+          "code": "Code"
+        }
+      },
+      "init": {
+        "title": "Integration settings",
+        "description": "Set the update interval and choose accounts.",
+        "data": {
+          "scan_interval": "Update interval",
+          "account_ids": "Accounts"
+        }
+      }
+    },
+    "abort": {
+      "cannot_connect": "Failed to connect to the EIRC SPB API.",
+      "invalid_auth": "Authentication failed. Reconfigure the integration.",
+      "unknown": "Unexpected error."
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the EIRC SPB API.",
+      "invalid_confirmation_code": "Invalid confirmation code.",
+      "invalid_code_length": "Invalid code length.",
+      "unknown": "Unexpected error."
+    }
+  }
+}

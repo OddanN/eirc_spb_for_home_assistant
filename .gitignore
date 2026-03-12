@@ -1,0 +1,14 @@
+# Version: 0.0.1
+.idea/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+*.pyc
+*.pyo
+*.pyd
+dist/
+build/
+*.zip
