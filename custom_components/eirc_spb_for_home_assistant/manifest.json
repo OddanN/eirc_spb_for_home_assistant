@@ -1,14 +1,14 @@
 {
   "domain": "eirc_spb_for_home_assistant",
-  "name": "EIRC SPB",
+  "name": "EIRC SPB for Home Assistant",
+  "version": "0.0.1",
   "config_flow": true,
   "codeowners": [
     "@OddanN"
   ],
   "documentation": "https://github.com/OddanN/eirc_spb_for_home_assistant",
-  "homeassistant": "2024.12.0",
+  "homeassistant": "2025.1.0",
   "issue_tracker": "https://github.com/OddanN/eirc_spb_for_home_assistant/issues",
   "iot_class": "cloud_polling",
-  "requirements": [],
-  "version": "0.0.1"
+  "requirements": []
 }
