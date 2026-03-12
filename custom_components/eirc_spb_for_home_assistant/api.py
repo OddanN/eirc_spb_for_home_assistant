@@ -15,6 +15,7 @@ from .const import (
     API_BASE_URL,
     API_CURRENT_USER_PATH,
     API_CUSTOMER,
+    CONF_VERIFIED,
 )
 
 
@@ -101,6 +102,7 @@ class EircSpbApiClient:
             "customer": API_CUSTOMER,
         }
         self._apply_session_cookie(headers)
+        self._apply_verified_token(headers)
         payload = {
             "type": self._auth_type,
             "login": self._login,
@@ -128,7 +130,7 @@ class EircSpbApiClient:
         except (aiohttp.ClientError, TimeoutError) as err:
             raise EircSpbConnectionError("Unable to connect to EIRC SPB") from err
 
-        self._auth_payload = data
+        self._auth_payload = self._merge_auth_payload(data)
         return data
 
     async def async_get_current_user(self) -> dict[str, Any]:
@@ -210,7 +212,7 @@ class EircSpbApiClient:
         except (aiohttp.ClientError, TimeoutError) as err:
             raise EircSpbConnectionError("Unable to connect to EIRC SPB") from err
 
-        self._auth_payload = data
+        self._auth_payload = self._merge_auth_payload(data)
         return data
 
     async def _async_get_with_auth(self, path: str, retry_auth: bool = True) -> Any:
@@ -247,6 +249,12 @@ class EircSpbApiClient:
         if self._session_cookie:
             headers["Cookie"] = f"session-cookie={self._session_cookie}"
 
+    def _apply_verified_token(self, headers: dict[str, str]) -> None:
+        """Attach the long-lived verification token to auth requests."""
+        verified = (self._auth_payload or {}).get(CONF_VERIFIED)
+        if verified:
+            headers["auth-verification"] = verified
+
     def _update_session_cookie(self, response: aiohttp.ClientResponse) -> None:
         """Persist session cookie from a response if the server provided one."""
         cookie = response.cookies.get("session-cookie")
@@ -259,3 +267,12 @@ class EircSpbApiClient:
             await self.async_authenticate()
         except EircSpbConfirmationRequired as err:
             raise EircSpbReauthRequired(err.transaction_id, err.types) from err
+
+    def _merge_auth_payload(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Merge newly received auth data with previously stored tokens."""
+        if not self._auth_payload:
+            return data
+        return {
+            **self._auth_payload,
+            **data,
+        }

@@ -60,8 +60,6 @@ def _build_descriptions(
         if block_header != LIVING_PREMISES_HEADER:
             continue
         for item_index, item in enumerate(block.get("content", [])):
-            if item.get("value") is None:
-                continue
             name = item.get("name")
             if not name:
                 continue
@@ -119,13 +117,20 @@ class EircSpbAccountDetailSensor(
     @property
     def native_value(self) -> str | None:
         """Return the current sensor value."""
-        item = self._item
+        item = self._current_item
+        if item is None:
+            return None
         value = item.get("value")
         if value is None:
-            return None
+            return "0"
         if value == "":
             return "0"
         return str(value)
+
+    @property
+    def available(self) -> bool:
+        """Keep the sensor available while the last item payload is present."""
+        return self._current_item is not None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -136,19 +141,35 @@ class EircSpbAccountDetailSensor(
             "last_update": updated_at.isoformat() if updated_at else None,
             "block_header": self._description.block_header,
         }
-        description = self._item.get("description")
+        item = self._current_item
+        if item is None:
+            return attrs
+
+        attrs["real_value"] = item.get("value")
+        description = item.get("description")
         if description:
             attrs["description"] = description
-        code = self._item.get("code")
+        code = item.get("code")
         if code:
             attrs["code"] = code
         return attrs
 
     @property
-    def _item(self) -> dict[str, Any]:
-        """Return the current source item."""
-        details = self.coordinator.data[self._description.account_id]["details"]
-        return details[self._description.block_index]["content"][self._description.item_index]
+    def _current_item(self) -> dict[str, Any] | None:
+        """Return the current source item if it still exists in coordinator data."""
+        payload = self.coordinator.data.get(self._description.account_id)
+        if not payload:
+            return None
+
+        details = payload.get("details", [])
+        if self._description.block_index >= len(details):
+            return None
+
+        content = details[self._description.block_index].get("content", [])
+        if self._description.item_index >= len(content):
+            return None
+
+        return content[self._description.item_index]
 
 
 def _account_identifier(user_id: int | None, account_id: str) -> str:
