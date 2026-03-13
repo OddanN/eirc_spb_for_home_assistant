@@ -11,7 +11,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .api import EircSpbApiClient, EircSpbAuthError
+from .api import EircSpbApiClient, EircSpbAuthError, EircSpbClientAuthContext
 from .const import (
     CONF_ACCESS,
     CONF_ACCOUNT_IDS,
@@ -45,17 +45,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: EircSpbConfigEntry) -> b
     hass.data.setdefault(DOMAIN, {})
 
     client = EircSpbApiClient(
-        hass=hass,
-        auth_type=entry.data[CONF_AUTH_TYPE],
-        login=entry.data[CONF_LOGIN],
-        password=entry.data[CONF_PASSWORD],
-        auth_payload={
-                         key: entry.data[key]
-                         for key in (CONF_ACCESS, CONF_AUTH, CONF_VERIFIED)
-                         if key in entry.data
-                     }
-                     or None,
-        session_cookie=entry.data.get(CONF_SESSION_COOKIE),
+        hass,
+        EircSpbClientAuthContext(
+            auth_type=entry.data[CONF_AUTH_TYPE],
+            login=entry.data[CONF_LOGIN],
+            password=entry.data[CONF_PASSWORD],
+            auth_payload={
+                             key: entry.data[key]
+                             for key in (CONF_ACCESS, CONF_AUTH, CONF_VERIFIED)
+                             if key in entry.data
+                         }
+                         or None,
+            session_cookie=entry.data.get(CONF_SESSION_COOKIE),
+        ),
     )
 
     data_coordinator = EircSpbDataUpdateCoordinator(hass, client, entry)

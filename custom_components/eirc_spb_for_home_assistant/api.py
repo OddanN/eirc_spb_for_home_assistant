@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import aiohttp
@@ -55,25 +56,28 @@ class EircSpbReauthRequired(EircSpbAuthError):
         self.types = types
 
 
+@dataclass(slots=True)
+class EircSpbClientAuthContext:
+    """Authentication inputs and persisted tokens for the API client."""
+
+    auth_type: str
+    login: str
+    password: str
+    auth_payload: dict[str, Any] | None = None
+    session_cookie: str | None = None
+
+
 class EircSpbApiClient:
     """Thin API client for EIRC SPB."""
 
-    def __init__(
-            self,
-            hass: HomeAssistant,
-            auth_type: str,
-            login: str,
-            password: str,
-            auth_payload: dict[str, Any] | None = None,
-            session_cookie: str | None = None,
-    ) -> None:
+    def __init__(self, hass: HomeAssistant, auth_context: EircSpbClientAuthContext) -> None:
         """Initialize the client."""
         self._session = async_get_clientsession(hass)
-        self._auth_type = auth_type
-        self._login = login
-        self._password = password
-        self._auth_payload = auth_payload
-        self._session_cookie = session_cookie
+        self._auth_type = auth_context.auth_type
+        self._login = auth_context.login
+        self._password = auth_context.password
+        self._auth_payload = auth_context.auth_payload
+        self._session_cookie = auth_context.session_cookie
 
     @property
     def auth_payload(self) -> dict[str, Any] | None:

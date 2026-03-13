@@ -2,14 +2,6 @@
 ignore-patterns = __pycache__.*
 
 [MESSAGES CONTROL]
-disable =
-    import-error,
-    duplicate-code,
-    too-few-public-methods,
-    too-many-instance-attributes,
-    too-many-return-statements,
-    too-many-arguments,
-    too-many-positional-arguments
 
 [FORMAT]
 max-line-length = 120

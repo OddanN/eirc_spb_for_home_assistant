@@ -12,7 +12,7 @@ from homeassistant.const import CONF_PASSWORD
 from .api import (
     EircSpbApiClient,
     EircSpbAuthError,
-    EircSpbConfirmationError,
+    EircSpbClientAuthContext,
     EircSpbConfirmationRequired,
     EircSpbConnectionError,
     EircSpbError,
@@ -37,6 +37,13 @@ from .const import (
     CONF_VERIFIED,
     DEFAULT_SCAN_INTERVAL_HOURS,
     DOMAIN,
+)
+from .flow_helpers import (
+    ChallengeState,
+    async_send_confirmation_with_errors,
+    confirmation_description_placeholders,
+    menu_options_for_challenges,
+    async_validate_confirmation_input,
 )
 from .options_flow import EircSpbOptionsFlow, build_entry_title
 
@@ -71,9 +78,7 @@ class EircSpbConfigFlow(ConfigFlow, domain=DOMAIN):
         self._auth_type: str | None = None
         self._login: str | None = None
         self._password: str | None = None
-        self._transaction_id: str | None = None
-        self._challenge_types: list[str] = []
-        self._selected_challenge_type: str | None = None
+        self._challenge_state = ChallengeState()
         self._reauth_entry: ConfigEntry | None = None
 
     async def async_step_user(
@@ -103,9 +108,7 @@ class EircSpbConfigFlow(ConfigFlow, domain=DOMAIN):
         self._auth_type = self._reauth_entry.data[CONF_AUTH_TYPE]
         self._login = self._reauth_entry.data[CONF_LOGIN]
         self._password = self._reauth_entry.data[CONF_PASSWORD]
-        self._transaction_id = None
-        self._challenge_types = []
-        self._selected_challenge_type = None
+        self._challenge_state = ChallengeState()
         return self._result(await self._async_try_reauth())
 
     async def async_step_reauth_confirm(
@@ -159,10 +162,12 @@ class EircSpbConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
 
             client = EircSpbApiClient(
-                hass=self.hass,
-                auth_type=auth_type,
-                login=self._login,
-                password=self._password,
+                self.hass,
+                EircSpbClientAuthContext(
+                    auth_type=auth_type,
+                    login=self._login,
+                    password=self._password,
+                ),
             )
 
             try:
@@ -170,8 +175,8 @@ class EircSpbConfigFlow(ConfigFlow, domain=DOMAIN):
             except EircSpbAuthError:
                 errors["base"] = "invalid_auth"
             except EircSpbConfirmationRequired as err:
-                self._transaction_id = err.transaction_id
-                self._challenge_types = err.types
+                self._challenge_state.transaction_id = err.transaction_id
+                self._challenge_state.challenge_types = err.types
                 return self._show_menu(
                     step_id="confirmation_method",
                     menu_options=self._menu_options_for_challenges(),
@@ -205,7 +210,7 @@ class EircSpbConfigFlow(ConfigFlow, domain=DOMAIN):
             self, _user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Fallback step if HA enters the method step directly."""
-        if not self._challenge_types:
+        if not self._challenge_state.challenge_types:
             return self._abort(reason="unknown")
 
         return self._show_menu(
@@ -233,57 +238,50 @@ class EircSpbConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _async_step_send_confirmation(self, challenge_type: str) -> ConfigFlowResult:
         """Send confirmation for the selected challenge type."""
-        if not self._transaction_id or not self._auth_type or not self._login or not self._password:
+        if (
+                not self._challenge_state.transaction_id
+                or not self._auth_type
+                or not self._login
+                or not self._password
+        ):
             return self._abort(reason="unknown")
 
-        client = self._build_client()
-        try:
-            await client.async_send_confirmation(self._transaction_id, challenge_type)
-        except EircSpbConnectionError:
+        send_error = await async_send_confirmation_with_errors(
+            self._build_client,
+            self._challenge_state.transaction_id,
+            challenge_type,
+        )
+        if send_error == "cannot_connect":
             return self._abort(reason="cannot_connect")
-        except EircSpbConfirmationError:
+        if send_error == "confirmation_failed":
             return self._abort(reason="confirmation_send_failed")
 
-        self._selected_challenge_type = challenge_type
+        self._challenge_state.selected_challenge_type = challenge_type
         return self._result(await self.async_step_confirmation_code())
 
     async def async_step_confirmation_code(
             self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle confirmation code entry."""
-        if not self._selected_challenge_type:
+        if not self._challenge_state.selected_challenge_type:
             return self._abort(reason="unknown")
 
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            code = user_input[CONF_CODE].strip()
-            expected_length = 4 if self._selected_challenge_type == AUTH_TYPE_FLASHCALL else 5
-            if len(code) != expected_length:
-                errors[CONF_CODE] = "invalid_code_length"
-            else:
-                client = self._build_client()
-                try:
-                    payload = await client.async_confirm_challenge(
-                        self._transaction_id,
-                        self._selected_challenge_type,
-                        code,
-                    )
-                except EircSpbConfirmationError:
-                    errors["base"] = "invalid_confirmation_code"
-                except EircSpbConnectionError:
-                    errors["base"] = "cannot_connect"
-                except EircSpbError:
-                    errors["base"] = "unknown"
-                else:
-                    try:
-                        return self._result(await self._async_finish_auth(client, payload))
-                    except EircSpbConnectionError:
-                        errors["base"] = "cannot_connect"
-                    except EircSpbAuthError:
-                        errors["base"] = "invalid_auth"
-                    except EircSpbError:
-                        errors["base"] = "unknown"
+        errors, confirmation_result = await async_validate_confirmation_input(
+            self._build_client,
+            self._challenge_state.transaction_id or "",
+            self._challenge_state.selected_challenge_type,
+            user_input,
+        )
+        if confirmation_result is not None:
+            client, payload = confirmation_result
+            try:
+                return self._result(await self._async_finish_auth(client, payload))
+            except EircSpbConnectionError:
+                errors["base"] = "cannot_connect"
+            except EircSpbAuthError:
+                errors["base"] = "invalid_auth"
+            except EircSpbError:
+                errors["base"] = "unknown"
 
         return self._show_form(
             step_id="confirmation_code",
@@ -308,8 +306,8 @@ class EircSpbConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors={"base": "invalid_auth"},
             )
         except EircSpbConfirmationRequired as err:
-            self._transaction_id = err.transaction_id
-            self._challenge_types = err.types
+            self._challenge_state.transaction_id = err.transaction_id
+            self._challenge_state.challenge_types = err.types
             return self._show_menu(
                 step_id="confirmation_method",
                 menu_options=self._menu_options_for_challenges(),
@@ -336,7 +334,7 @@ class EircSpbConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_AUTH_TYPE: self._auth_type,
             CONF_LOGIN: self._login,
             CONF_PASSWORD: self._password,
-            CONF_CHALLENGE_TYPE: self._selected_challenge_type,
+            CONF_CHALLENGE_TYPE: self._challenge_state.selected_challenge_type,
             CONF_ACCESS: payload.get(CONF_ACCESS),
             CONF_AUTH: payload.get(CONF_AUTH),
             CONF_EMAIL: user.get(CONF_EMAIL),
@@ -378,38 +376,25 @@ class EircSpbConfigFlow(ConfigFlow, domain=DOMAIN):
             session_cookie = self._reauth_entry.data.get(CONF_SESSION_COOKIE)
 
         return EircSpbApiClient(
-            hass=self.hass,
-            auth_type=self._auth_type or AUTH_TYPE_EMAIL,
-            login=self._login or "",
-            password=self._password or "",
-            auth_payload=auth_payload or None,
-            session_cookie=session_cookie,
+            self.hass,
+            EircSpbClientAuthContext(
+                auth_type=self._auth_type or AUTH_TYPE_EMAIL,
+                login=self._login or "",
+                password=self._password or "",
+                auth_payload=auth_payload or None,
+                session_cookie=session_cookie,
+            ),
         )
 
     def _menu_options_for_challenges(self) -> list[str]:
         """Return config flow step ids for available challenge types."""
-        mapping = {
-            AUTH_TYPE_EMAIL: "email_confirmation",
-            AUTH_TYPE_PHONE: "phone_confirmation",
-            AUTH_TYPE_FLASHCALL: "flashcall_confirmation",
-        }
-        return [
-            mapping[challenge_type]
-            for challenge_type in self._challenge_types
-            if challenge_type in mapping
-        ]
+        return menu_options_for_challenges(self._challenge_state.challenge_types)
 
     def _confirmation_description_placeholders(self) -> dict[str, str]:
         """Build placeholders for the confirmation code step."""
-        placeholders = {
-            "code_length": "4" if self._selected_challenge_type == AUTH_TYPE_FLASHCALL else "5",
-            "flashcall_hint": "",
-        }
-        if self._selected_challenge_type == AUTH_TYPE_FLASHCALL:
-            placeholders["flashcall_hint"] = (
-                "Last 4 digits of the phone number that called you."
-            )
-        return placeholders
+        return confirmation_description_placeholders(
+            self._challenge_state.selected_challenge_type
+        )
 
     @staticmethod
     def _result(result: Any) -> ConfigFlowResult:

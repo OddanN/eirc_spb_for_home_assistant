@@ -21,14 +21,16 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: "3.12"
 
-      - name: Install pylint
-        run: python -m pip install --upgrade pip pylint
+      - name: Install pylint and lint dependencies
+        run: python -m pip install --upgrade pip pylint homeassistant aiohttp voluptuous
 
       - name: Run pylint
+        env:
+          PY_COLORS: "1"
         run: |
-          pylint --rcfile=.pylintrc custom_components/eirc_spb_for_home_assistant | tee pylint-report.txt
+          pylint --output-format=colorized --rcfile=.pylintrc custom_components/eirc_spb_for_home_assistant | tee pylint-report.txt
 
       - name: Upload pylint report
         if: always()

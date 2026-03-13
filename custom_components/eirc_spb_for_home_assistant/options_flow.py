@@ -22,7 +22,7 @@ from homeassistant.helpers.selector import (
 from .api import (
     EircSpbApiClient,
     EircSpbAuthError,
-    EircSpbConfirmationError,
+    EircSpbClientAuthContext,
     EircSpbConfirmationRequired,
     EircSpbConnectionError,
     EircSpbError,
@@ -45,6 +45,13 @@ from .const import (
     CONF_SESSION_COOKIE,
     CONF_VERIFIED,
     DEFAULT_SCAN_INTERVAL_HOURS,
+)
+from .flow_helpers import (
+    ChallengeState,
+    async_send_confirmation_with_errors,
+    confirmation_description_placeholders,
+    menu_options_for_challenges,
+    async_validate_confirmation_input,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -100,36 +107,14 @@ class EircSpbOptionsFlow(OptionsFlow):
         self._scan_interval = config_entry.options.get(
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_HOURS
         )
-        self._transaction_id: str | None = None
-        self._challenge_types: list[str] = []
-        self._selected_challenge_type: str | None = None
+        self._challenge_state = ChallengeState()
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         """Manage integration options."""
         if not self._groups:
-            try:
-                await self._async_load_groups(self.hass)
-            except EircSpbReauthRequired as err:
-                self._transaction_id = err.transaction_id
-                self._challenge_types = err.types
-                return self.async_show_menu(
-                    step_id="reauth_confirmation_method",
-                    menu_options=self._menu_options_for_challenges(),
-                )
-            except EircSpbAuthError:
-                return self.async_abort(reason="invalid_auth")
-            except EircSpbConfirmationRequired as err:
-                self._transaction_id = err.transaction_id
-                self._challenge_types = err.types
-                return self.async_show_menu(
-                    step_id="reauth_confirmation_method",
-                    menu_options=self._menu_options_for_challenges(),
-                )
-            except EircSpbConnectionError:
-                return self.async_abort(reason="cannot_connect")
-            except EircSpbError:
-                _LOGGER.exception("Failed to load account groups for options flow")
-                return self.async_abort(reason="unknown")
+            load_result = await self._async_prepare_groups()
+            if load_result is not None:
+                return load_result
 
         if user_input is not None:
             self._scan_interval = user_input[CONF_SCAN_INTERVAL]
@@ -159,7 +144,7 @@ class EircSpbOptionsFlow(OptionsFlow):
             self, _user_input: dict[str, Any] | None = None
     ):
         """Show available confirmation methods for options flow reauth."""
-        if not self._challenge_types:
+        if not self._challenge_state.challenge_types:
             return self.async_abort(reason="invalid_auth")
 
         return self.async_show_menu(
@@ -187,65 +172,52 @@ class EircSpbOptionsFlow(OptionsFlow):
 
     async def _async_step_send_confirmation(self, challenge_type: str):
         """Send confirmation code for options reauth."""
-        if not self._transaction_id:
+        if not self._challenge_state.transaction_id:
             return self.async_abort(reason="invalid_auth")
 
-        client = self._build_client()
-        try:
-            await client.async_send_confirmation(self._transaction_id, challenge_type)
-        except EircSpbConnectionError:
-            return self.async_abort(reason="cannot_connect")
-        except EircSpbConfirmationError:
-            return self.async_abort(reason="unknown")
+        send_error = await async_send_confirmation_with_errors(
+            self._build_client,
+            self._challenge_state.transaction_id,
+            challenge_type,
+        )
+        abort_reason = {
+            "cannot_connect": "cannot_connect",
+            "confirmation_failed": "unknown",
+        }.get(send_error)
+        if abort_reason is not None:
+            return self.async_abort(reason=abort_reason)
 
-        self._selected_challenge_type = challenge_type
+        self._challenge_state.selected_challenge_type = challenge_type
         return await self.async_step_confirmation_code()
 
     async def async_step_confirmation_code(
             self, user_input: dict[str, Any] | None = None
     ):
         """Handle confirmation code entry for options reauth."""
-        if not self._selected_challenge_type or not self._transaction_id:
+        if (
+                not self._challenge_state.selected_challenge_type
+                or not self._challenge_state.transaction_id
+        ):
             return self.async_abort(reason="invalid_auth")
 
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            code = user_input[CONF_CODE].strip()
-            expected_length = 4 if self._selected_challenge_type == AUTH_TYPE_FLASHCALL else 5
-            if len(code) != expected_length:
-                errors[CONF_CODE] = "invalid_code_length"
-            else:
-                client = self._build_client()
-                try:
-                    payload = await client.async_confirm_challenge(
-                        self._transaction_id,
-                        self._selected_challenge_type,
-                        code,
-                    )
-                except EircSpbConfirmationError:
-                    errors["base"] = "invalid_confirmation_code"
-                except EircSpbConnectionError:
-                    errors["base"] = "cannot_connect"
-                except EircSpbError:
-                    errors["base"] = "unknown"
-                else:
-                    self._update_config_entry_auth(client, payload)
-                    self._groups = []
-                    return await self.async_step_init()
-
-        description_placeholders = {
-            "code_length": "4" if self._selected_challenge_type == AUTH_TYPE_FLASHCALL else "5",
-            "flashcall_hint": "",
-        }
-        if self._selected_challenge_type == AUTH_TYPE_FLASHCALL:
-            description_placeholders["flashcall_hint"] = (
-                "Last 4 digits of the phone number that called you."
-            )
+        errors, confirmation_result = await async_validate_confirmation_input(
+            self._build_client,
+            self._challenge_state.transaction_id,
+            self._challenge_state.selected_challenge_type,
+            user_input,
+        )
+        if confirmation_result is not None:
+            client, payload = confirmation_result
+            self._update_config_entry_auth(client, payload)
+            self._groups = []
+            return await self.async_step_init()
 
         return self.async_show_form(
             step_id="confirmation_code",
             data_schema=vol.Schema({vol.Required(CONF_CODE): str}),
-            description_placeholders=description_placeholders,
+            description_placeholders=confirmation_description_placeholders(
+                self._challenge_state.selected_challenge_type
+            ),
             errors=errors,
         )
 
@@ -296,20 +268,49 @@ class EircSpbOptionsFlow(OptionsFlow):
             len(self._account_map),
         )
 
+    async def _async_prepare_groups(self):
+        """Load groups and map flow exceptions to HA flow results."""
+        try:
+            await self._async_load_groups(self.hass)
+        except EircSpbReauthRequired as err:
+            self._challenge_state.transaction_id = err.transaction_id
+            self._challenge_state.challenge_types = err.types
+            return self.async_show_menu(
+                step_id="reauth_confirmation_method",
+                menu_options=self._menu_options_for_challenges(),
+            )
+        except EircSpbAuthError:
+            return self.async_abort(reason="invalid_auth")
+        except EircSpbConfirmationRequired as err:
+            self._challenge_state.transaction_id = err.transaction_id
+            self._challenge_state.challenge_types = err.types
+            return self.async_show_menu(
+                step_id="reauth_confirmation_method",
+                menu_options=self._menu_options_for_challenges(),
+            )
+        except EircSpbConnectionError:
+            return self.async_abort(reason="cannot_connect")
+        except EircSpbError:
+            _LOGGER.exception("Failed to load account groups for options flow")
+            return self.async_abort(reason="unknown")
+        return None
+
     def _build_client(self) -> EircSpbApiClient:
         """Build an API client from config entry data."""
         return EircSpbApiClient(
-            hass=self.hass,
-            auth_type=self._config_entry.data[CONF_AUTH_TYPE],
-            login=self._config_entry.data[CONF_LOGIN],
-            password=self._config_entry.data[CONF_PASSWORD],
-            auth_payload={
-                             key: self._config_entry.data[key]
-                             for key in (CONF_ACCESS, CONF_AUTH, CONF_VERIFIED)
-                             if key in self._config_entry.data
-                         }
-                         or None,
-            session_cookie=self._config_entry.data.get(CONF_SESSION_COOKIE),
+            self.hass,
+            EircSpbClientAuthContext(
+                auth_type=self._config_entry.data[CONF_AUTH_TYPE],
+                login=self._config_entry.data[CONF_LOGIN],
+                password=self._config_entry.data[CONF_PASSWORD],
+                auth_payload={
+                                 key: self._config_entry.data[key]
+                                 for key in (CONF_ACCESS, CONF_AUTH, CONF_VERIFIED)
+                                 if key in self._config_entry.data
+                             }
+                             or None,
+                session_cookie=self._config_entry.data.get(CONF_SESSION_COOKIE),
+            ),
         )
 
     def _update_config_entry_auth(
@@ -322,7 +323,7 @@ class EircSpbOptionsFlow(OptionsFlow):
             self._config_entry,
             data={
                 **self._config_entry.data,
-                CONF_CHALLENGE_TYPE: self._selected_challenge_type,
+                CONF_CHALLENGE_TYPE: self._challenge_state.selected_challenge_type,
                 CONF_ACCESS: payload.get(CONF_ACCESS),
                 CONF_AUTH: payload.get(CONF_AUTH),
                 CONF_SESSION_COOKIE: client.session_cookie,
@@ -332,13 +333,4 @@ class EircSpbOptionsFlow(OptionsFlow):
 
     def _menu_options_for_challenges(self) -> list[str]:
         """Return options-flow step ids for available challenge types."""
-        mapping = {
-            AUTH_TYPE_EMAIL: "email_confirmation",
-            AUTH_TYPE_PHONE: "phone_confirmation",
-            AUTH_TYPE_FLASHCALL: "flashcall_confirmation",
-        }
-        return [
-            mapping[challenge_type]
-            for challenge_type in self._challenge_types
-            if challenge_type in mapping
-        ]
+        return menu_options_for_challenges(self._challenge_state.challenge_types)
