@@ -45,6 +45,14 @@
         "data": {
           "password": "Password"
         }
+      },
+      "settings": {
+        "title": "Integration settings",
+        "description": "Set the update interval and choose accounts.",
+        "data": {
+          "scan_interval": "Update interval",
+          "account_ids": "Accounts"
+        }
       }
     },
     "error": {

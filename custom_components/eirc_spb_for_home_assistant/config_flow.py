@@ -8,6 +8,15 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_PASSWORD
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .api import (
     EircSpbApiClient,
@@ -45,7 +54,7 @@ from .flow_helpers import (
     menu_options_for_challenges,
     async_validate_confirmation_input,
 )
-from .options_flow import EircSpbOptionsFlow, build_entry_title
+from .options_flow import EircSpbOptionsFlow, build_account_name_maps, build_entry_title
 
 
 def _normalize_login(auth_type: str, login: str) -> str:
@@ -80,6 +89,9 @@ class EircSpbConfigFlow(ConfigFlow, domain=DOMAIN):
         self._password: str | None = None
         self._challenge_state = ChallengeState()
         self._reauth_entry: ConfigEntry | None = None
+        self._account_map: dict[str, str] = {}
+        self._entry_title: str | None = None
+        self._pending_entry_data: dict[str, Any] | None = None
 
     async def async_step_user(
             self, _user_input: dict[str, Any] | None = None
@@ -319,6 +331,66 @@ class EircSpbConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self._result(await self._async_finish_auth(client, payload))
 
+    async def async_step_settings(
+            self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Configure tracked accounts and scan interval after auth."""
+        if self._pending_entry_data is None:
+            return self._abort(reason="unknown")
+
+        if user_input is not None:
+            selected_accounts = [
+                account_id
+                for account_id in user_input[CONF_ACCOUNT_IDS]
+                if account_id in self._account_map
+            ]
+            return self._create_entry(
+                title=self._entry_title or self._login or "EIRC SPB",
+                data=self._pending_entry_data,
+                options={
+                    CONF_SCAN_INTERVAL: int(user_input[CONF_SCAN_INTERVAL]),
+                    CONF_ACCOUNT_IDS: selected_accounts,
+                    CONF_ACCOUNT_NAMES: {
+                        account_id: self._account_map[account_id]
+                        for account_id in selected_accounts
+                    },
+                },
+            )
+
+        return self._show_form(
+            step_id="settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_SCAN_INTERVAL,
+                        default=DEFAULT_SCAN_INTERVAL_HOURS,
+                    ): NumberSelector(
+                        NumberSelectorConfig(
+                            min=1,
+                            max=12,
+                            step=1,
+                            mode=NumberSelectorMode.BOX,
+                            unit_of_measurement="h",
+                        )
+                    ),
+                    vol.Required(
+                        CONF_ACCOUNT_IDS,
+                        default=list(self._account_map.keys()),
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[
+                                SelectOptionDict(value=account_id, label=label)
+                                for account_id, label in self._account_map.items()
+                            ],
+                            multiple=True,
+                            mode=SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                }
+            ),
+        )
+
+
     async def _async_finish_auth(
             self,
             client: EircSpbApiClient,
@@ -353,15 +425,11 @@ class EircSpbConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.hass.config_entries.async_reload(self._reauth_entry.entry_id)
             return self._abort(reason="reauth_successful")
 
-        return self._create_entry(
-            title=title,
-            data=data,
-            options={
-                CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL_HOURS,
-                CONF_ACCOUNT_IDS: [],
-                CONF_ACCOUNT_NAMES: {},
-            },
-        )
+        groups = await client.async_get_account_groups()
+        self._account_map = build_account_name_maps(groups)
+        self._entry_title = title
+        self._pending_entry_data = data
+        return self._result(await self.async_step_settings())
 
     def _build_client(self) -> EircSpbApiClient:
         """Build an API client from current flow state."""

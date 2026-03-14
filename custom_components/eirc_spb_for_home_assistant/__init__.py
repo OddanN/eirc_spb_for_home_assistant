@@ -37,7 +37,7 @@ from .coordinator import EircSpbDataUpdateCoordinator
 
 type EircSpbConfigEntry = ConfigEntry[EircSpbApiClient]
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "number", "button"]
 _LOGGER = logging.getLogger(__name__)
 
 
