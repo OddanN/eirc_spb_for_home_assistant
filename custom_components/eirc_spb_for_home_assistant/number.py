@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -27,6 +27,7 @@ class EircSpbScanIntervalNumber(NumberEntity):
     _attr_icon = 'mdi:timer-outline'
     _attr_entity_category = EntityCategory.CONFIG
     _attr_has_entity_name = True
+    _attr_mode = NumberMode.BOX
     _attr_native_min_value = 1
     _attr_native_max_value = 12
     _attr_native_step = 1
