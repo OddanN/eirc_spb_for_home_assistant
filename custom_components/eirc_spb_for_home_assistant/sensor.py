@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -41,12 +42,29 @@ async def async_setup_entry(
     """Set up EIRC SPB sensors from a config entry."""
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
 
-    entities: list[EircSpbAccountDetailSensor] = []
-    for account_id, payload in coordinator.data.items():
-        for description in _build_descriptions(account_id, payload["details"]):
-            entities.append(EircSpbAccountDetailSensor(coordinator, entry, description))
+    known_unique_ids: set[str] = set()
 
-    async_add_entities(entities)
+    @callback
+    def _async_add_missing_entities() -> None:
+        entities: list[EircSpbAccountDetailSensor] = []
+        for account_id, payload in (coordinator.data or {}).items():
+            for description in _build_descriptions(account_id, payload["details"]):
+                unique_id = (
+                    f"{entry.entry_id}_{description.account_id}_"
+                    f"{slugify(description.block_header)}_{slugify(description.name)}_"
+                    f"{description.block_index}_{description.item_index}"
+                )
+                if unique_id in known_unique_ids:
+                    continue
+
+                known_unique_ids.add(unique_id)
+                entities.append(EircSpbAccountDetailSensor(coordinator, entry, description))
+
+        if entities:
+            async_add_entities(entities)
+
+    _async_add_missing_entities()
+    entry.async_on_unload(coordinator.async_add_listener(_async_add_missing_entities))
 
 
 def _build_descriptions(

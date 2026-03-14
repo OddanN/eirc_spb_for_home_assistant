@@ -100,5 +100,11 @@
       "invalid_code_length": "Invalid code length.",
       "unknown": "Unexpected error."
     }
+  },
+  "issues": {
+    "api_unavailable": {
+      "title": "EIRC SPB API is unavailable",
+      "description": "Integration \"{entry_title}\" received HTTP 504 from the EIRC SPB API for {attempts} consecutive refresh attempts with a retry interval of {minutes} minutes. The integration keeps the last successful data, but it is now stale until the API recovers."
+    }
   }
 }

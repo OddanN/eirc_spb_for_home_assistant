@@ -31,6 +31,11 @@ class EircSpbAuthError(EircSpbError):
 class EircSpbConnectionError(EircSpbError):
     """Raised when the API is unavailable."""
 
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        """Initialize the exception."""
+        super().__init__(message)
+        self.status_code = status_code
+
 
 class EircSpbConfirmationRequired(EircSpbError):
     """Raised when additional confirmation is required."""
@@ -126,6 +131,12 @@ class EircSpbApiClient:
                 if response.status in (400, 401, 403):
                     raise EircSpbAuthError("Invalid credentials")
 
+                if response.status >= 500:
+                    raise EircSpbConnectionError(
+                        f"EIRC SPB API is temporarily unavailable: HTTP {response.status}",
+                        status_code=response.status,
+                    )
+
                 if response.status >= 400:
                     text = await response.text()
                     raise EircSpbError(f"Unexpected API response: {response.status} {text}")
@@ -173,6 +184,12 @@ class EircSpbApiClient:
         try:
             async with self._session.post(url, headers=headers) as response:
                 self._update_session_cookie(response)
+                if response.status >= 500:
+                    raise EircSpbConnectionError(
+                        f"EIRC SPB API is temporarily unavailable: HTTP {response.status}",
+                        status_code=response.status,
+                    )
+
                 if response.status >= 400:
                     text = await response.text()
                     raise EircSpbConfirmationError(
@@ -205,6 +222,12 @@ class EircSpbApiClient:
                 self._update_session_cookie(response)
                 if response.status in (400, 401, 403):
                     raise EircSpbConfirmationError("Invalid confirmation code")
+
+                if response.status >= 500:
+                    raise EircSpbConnectionError(
+                        f"EIRC SPB API is temporarily unavailable: HTTP {response.status}",
+                        status_code=response.status,
+                    )
 
                 if response.status >= 400:
                     text = await response.text()
@@ -239,6 +262,12 @@ class EircSpbApiClient:
                         raise EircSpbAuthError("Invalid auth token")
                     await self._async_reauthenticate()
                     return await self._async_get_with_auth(path, retry_auth=False)
+
+                if response.status >= 500:
+                    raise EircSpbConnectionError(
+                        f"EIRC SPB API is temporarily unavailable: HTTP {response.status}",
+                        status_code=response.status,
+                    )
 
                 if response.status >= 400:
                     text = await response.text()

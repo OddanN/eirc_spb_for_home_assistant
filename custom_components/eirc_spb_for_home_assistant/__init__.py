@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import Mapping
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .api import EircSpbApiClient, EircSpbAuthError, EircSpbClientAuthContext
+from .api import (
+    EircSpbApiClient,
+    EircSpbAuthError,
+    EircSpbClientAuthContext,
+    EircSpbConnectionError,
+    EircSpbError,
+)
 from .const import (
     CONF_ACCESS,
     CONF_ACCOUNT_IDS,
@@ -32,6 +38,7 @@ from .coordinator import EircSpbDataUpdateCoordinator
 type EircSpbConfigEntry = ConfigEntry[EircSpbApiClient]
 
 PLATFORMS = ["sensor"]
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
@@ -61,12 +68,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EircSpbConfigEntry) -> b
     )
 
     data_coordinator = EircSpbDataUpdateCoordinator(hass, client, entry)
-    try:
-        await data_coordinator.async_config_entry_first_refresh()
-    except EircSpbAuthError as err:
-        raise ConfigEntryAuthFailed(str(err)) from err
-    except Exception as err:
-        raise ConfigEntryNotReady(str(err)) from err
+    await data_coordinator.async_restore_last_data()
 
     hass.data[DOMAIN][entry.entry_id] = {
         "client": client,
@@ -76,6 +78,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: EircSpbConfigEntry) -> b
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await _async_register_account_devices(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    hass.async_create_task(
+        _async_refresh_after_setup(hass, entry, data_coordinator),
+        name=f"{DOMAIN}_{entry.entry_id}_initial_refresh",
+    )
     return True
 
 
@@ -92,6 +98,35 @@ async def async_unload_entry(hass: HomeAssistant, entry: EircSpbConfigEntry) -> 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry after options update."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def _async_refresh_after_setup(
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        data_coordinator: EircSpbDataUpdateCoordinator,
+) -> None:
+    """Refresh data in the background after entry setup completes."""
+    try:
+        await data_coordinator.async_refresh()
+    except EircSpbAuthError as err:
+        _LOGGER.warning("Background refresh failed due to authentication error: %s", err)
+        await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={
+                "source": SOURCE_REAUTH,
+                "entry_id": entry.entry_id,
+                "title_placeholders": {"name": entry.title},
+            },
+            data=entry.data,
+        )
+    except (EircSpbConnectionError, EircSpbError) as err:
+        _LOGGER.warning(
+            "Initial data refresh failed, integration will retry in background: %s",
+            err,
+        )
+    except asyncio.CancelledError:
+        _LOGGER.debug("Background refresh cancelled for entry %s", entry.entry_id)
+        raise
 
 
 async def _async_register_account_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
